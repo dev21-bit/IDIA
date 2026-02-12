@@ -143,7 +143,7 @@ if "autenticado" not in st.session_state:
 
 if not st.session_state.autenticado:
     with st.container():
-        st.subheader("Ingresa tu PIN")
+        st.subheader("Ingresa tu Clave")
         with st.form("pin_form"):
             pin_col1, pin_col2 = st.columns([2,1])
             with pin_col1:
@@ -156,9 +156,9 @@ if not st.session_state.autenticado:
                     st.session_state.autenticado = True
                     st.session_state.usuario_nombre = usuario["nombre"]
                     st.session_state.usuario_pin = usuario["pin"]
-                    st.success(f"✅ PIN correcto. Bienvenido {usuario['nombre']}")
+                    st.success(f"✅ Clave correcta. Bienvenido {usuario['nombre']}")
                 else:
-                    st.error("❌ PIN incorrecto")
+                    st.error("❌ Clave incorrecta")
 
 # =====================================================
 # Formulario principal solo si PIN es correcto
