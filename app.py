@@ -149,7 +149,7 @@ if not st.session_state.autenticado:
             with pin_col1:
                 pin = st.text_input("PIN", type="password")
             with pin_col2:
-                submit_pin = st.form_submit_button("Validar PIN")
+                submit_pin = st.form_submit_button("Validar")
             if submit_pin:
                 usuario = validar_pin(pin)
                 if usuario:
