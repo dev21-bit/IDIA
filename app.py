@@ -12,11 +12,11 @@ client = OpenAI(api_key=st.secrets["openai"]["api_key"])
 # =====================================================
 def get_connection():
     return pymysql.connect(
-        host=st.secrets["DB_HOST"],
-        user=st.secrets["DB_USER"],
-        password=st.secrets["DB_PASSWORD"],
-        database=st.secrets["DB_NAME"],
-        port=st.secrets["DB_PORT"],
+        host=st.secrets["db"]["DB_HOST"],
+        user=st.secrets["db"]["DB_USER"],
+        password=st.secrets["db"]["DB_PASSWORD"],
+        database=st.secrets["db"]["DB_NAME"],
+        port=st.secrets["db"]["DB_PORT"],
         cursorclass=pymysql.cursors.DictCursor
     )
 
