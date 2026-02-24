@@ -509,26 +509,27 @@ No agregues explicación. Solo JSON válido.
                                 # Guardar el teléfono actual
                                 st.session_state.telefono_value = telefono_input
                                 
-                                # Mostrar mensaje de éxito con cuenta regresiva
+                                # Activar mensaje de éxito
+                                st.session_state.show_success_message = True
+                                st.session_state.success_message_time = time.time()
+
+                            # Mostrar mensaje de éxito si corresponde
+                            if st.session_state.show_success_message:
+                                elapsed = time.time() - st.session_state.success_message_time
                                 success_placeholder = st.empty()
                                 progress_placeholder = st.empty()
                                 
-                                for i in range(3, 0, -1):
+                                if elapsed < 3:
+                                    # Mostrar mensaje y barra de progreso
                                     with success_placeholder.container():
                                         st.success("✅ ¡Registro guardado exitosamente!")
                                     with progress_placeholder.container():
-                                        st.progress((3 - i + 1) / 3, text=f"Preparando para nuevo registro... {i}s")
-                                    time.sleep(1)
-                                
-                                # Limpiar placeholders
-                                success_placeholder.empty()
-                                progress_placeholder.empty()
-                                
-                                # Resetear formulario
-                                st.session_state.uploaded_file_key += 1
-                                st.session_state.telefono_value = ""
-                                st.session_state.form_submitted = True
-                                st.rerun()
+                                        st.progress(elapsed / 3, text=f"Preparando para nuevo registro... {int(3 - elapsed)}s")
+                                else:
+                                    # Limpiar placeholders y resetear formulario
+                                    success_placeholder.empty()
+                                    progress_placeholder.empty()
+                                    reset_form()
                                 
                             elif resultado == "duplicado":
                                 st.warning("⚠️ Registro duplicado - La clave de elector ya existe en la base de datos")
