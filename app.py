@@ -420,31 +420,6 @@ if st.session_state.autenticado:
     if st.session_state.should_reset_form:
         reset_form()
     
-    # Mostrar mensaje de éxito si existe
-    if st.session_state.show_success_message:
-        # Calcular tiempo transcurrido
-        elapsed_time = time.time() - st.session_state.success_message_time
-        remaining_time = max(0, 3 - elapsed_time)
-        
-        if remaining_time > 0:
-            # Mostrar mensaje de éxito
-            st.success("✅ ¡Registro guardado exitosamente!")
-            # Mostrar barra de progreso
-            progress_value = remaining_time / 3
-            st.progress(progress_value, text=f"Preparando para nuevo registro... {int(remaining_time)}s")
-            
-            # Programar reset para el próximo ciclo
-            if "reset_scheduled" not in st.session_state:
-                st.session_state.reset_scheduled = True
-                st.session_state.should_reset_form = True
-        else:
-            # El tiempo ha pasado, resetear
-            st.session_state.show_success_message = False
-            st.session_state.should_reset_form = True
-            if "reset_scheduled" in st.session_state:
-                del st.session_state.reset_scheduled
-            st.rerun()
-    
     with st.expander("📝 Registro de Nueva Credencial INE", expanded=True):
         st.info("📌 **Instrucciones:** Sube una imagen de la credencial INE (frente) y completa el número de teléfono a 10 dígitos.")
         
@@ -531,15 +506,30 @@ No agregues explicación. Solo JSON válido.
                             )
 
                             if resultado == "insertado":
-                                # Guardar el teléfono actual antes de limpiar
+                                # Guardar el teléfono actual
                                 st.session_state.telefono_value = telefono_input
-                                # Activar mensaje de éxito
-                                st.session_state.show_success_message = True
-                                st.session_state.success_message_time = time.time()
+                                
+                                # Mostrar mensaje de éxito con cuenta regresiva
+                                success_placeholder = st.empty()
+                                progress_placeholder = st.empty()
+                                
+                                for i in range(3, 0, -1):
+                                    with success_placeholder.container():
+                                        st.success("✅ ¡Registro guardado exitosamente!")
+                                    with progress_placeholder.container():
+                                        st.progress((3 - i + 1) / 3, text=f"Preparando para nuevo registro... {i}s")
+                                    time.sleep(1)
+                                
+                                # Limpiar placeholders
+                                success_placeholder.empty()
+                                progress_placeholder.empty()
+                                
+                                # Resetear formulario
+                                st.session_state.uploaded_file_key += 1
+                                st.session_state.telefono_value = ""
                                 st.session_state.form_submitted = True
-                                if "reset_scheduled" in st.session_state:
-                                    del st.session_state.reset_scheduled
                                 st.rerun()
+                                
                             elif resultado == "duplicado":
                                 st.warning("⚠️ Registro duplicado - La clave de elector ya existe en la base de datos")
                             elif resultado == "Clave de elector inválida":
