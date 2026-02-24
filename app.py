@@ -512,6 +512,7 @@ No agregues explicación. Solo JSON válido.
                                 # Activar mensaje de éxito
                                 st.session_state.show_success_message = True
                                 st.session_state.success_message_time = time.time()
+                                st.session_state.should_reset_form = False
 
                             # Mostrar mensaje de éxito si corresponde
                             if st.session_state.show_success_message:
@@ -525,6 +526,10 @@ No agregues explicación. Solo JSON válido.
                                         st.success("✅ ¡Registro guardado exitosamente!")
                                     with progress_placeholder.container():
                                         st.progress(elapsed / 3, text=f"Preparando para nuevo registro... {int(3 - elapsed)}s")
+                                    
+                                    # Fuerza rerun cada 0.5 segundos para actualizar barra
+                                    time.sleep(0.5)
+                                    st.experimental_rerun()
                                 else:
                                     # Limpiar placeholders y resetear formulario
                                     success_placeholder.empty()
