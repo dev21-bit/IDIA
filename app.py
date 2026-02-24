@@ -328,7 +328,7 @@ if "autenticado" not in st.session_state:
 
 if not st.session_state.autenticado:
     with st.container():
-        st.subheader("🔐 Iniciar Sesión")
+        st.subheader("Iniciar Sesión")
         with st.form("pin_form"):
             pin_col1, pin_col2 = st.columns([2,1])
             with pin_col1:
@@ -354,7 +354,7 @@ if st.session_state.autenticado:
     with col_user1:
         st.markdown(f"**👤 Usuario:** {st.session_state.usuario_nombre}")
     with col_user3:
-        if st.button("🚪 Cerrar Sesión", use_container_width=True):
+        if st.button("Cerrar Sesión", use_container_width=True):
             st.session_state.autenticado = False
             st.session_state.usuario_nombre = None
             st.session_state.usuario_pin = None
@@ -381,7 +381,7 @@ if st.session_state.autenticado:
                     help="Ingresa el número de teléfono a 10 dígitos"
                 )
             
-            submit_ine = st.form_submit_button("🚀 Procesar y Guardar Registro", use_container_width=True)
+            submit_ine = st.form_submit_button("Procesar y Guardar Registro", use_container_width=True)
             
             if submit_ine:
                 if not uploaded_file:
@@ -472,7 +472,7 @@ No agregues explicación. Solo JSON válido.
     st.markdown("---")
     col_footer1, col_footer2, col_footer3 = st.columns(3)
     with col_footer1:
-        st.caption("© 2024 IDAI - Sistema de Registro")
+        st.caption("2026 IDAI - Sistema de Registro")
     with col_footer2:
         st.caption(f"Usuario activo: {st.session_state.usuario_nombre}")
     with col_footer3:
