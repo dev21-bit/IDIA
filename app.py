@@ -31,6 +31,18 @@ if "show_success_message" not in st.session_state:
     st.session_state.show_success_message = False
 if "success_message_time" not in st.session_state:
     st.session_state.success_message_time = 0
+if "should_reset_form" not in st.session_state:
+    st.session_state.should_reset_form = False
+
+# =====================================================
+# FUNCIÓN PARA RESETEAR EL FORMULARIO
+# =====================================================
+def reset_form():
+    st.session_state.uploaded_file_key += 1
+    st.session_state.telefono_value = ""
+    st.session_state.show_success_message = False
+    st.session_state.should_reset_form = False
+    st.session_state.form_submitted = True
 
 # =====================================================
 # ESTILOS PERSONALIZADOS PARA TRADUCIR ELEMENTOS
@@ -162,6 +174,12 @@ st.markdown("""
         padding: 1rem;
         border-radius: 8px;
         box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        margin-bottom: 20px;
+    }
+    
+    /* Estilo para la barra de progreso */
+    .stProgress > div > div {
+        background-color: #28a745;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -393,27 +411,38 @@ if st.session_state.autenticado:
             st.session_state.usuario_pin = None
             st.session_state.form_submitted = False
             st.session_state.show_success_message = False
+            st.session_state.should_reset_form = False
             st.rerun()
     
     st.markdown("---")
     
+    # Verificar si debemos resetear el formulario
+    if st.session_state.should_reset_form:
+        reset_form()
+    
     # Mostrar mensaje de éxito si existe
     if st.session_state.show_success_message:
-        success_placeholder = st.empty()
-        with success_placeholder.container():
-            st.success("✅ ¡Registro guardado exitosamente!")
-            # Agregar un temporizador visual
-            st.progress(1.0, text="Preparando para nuevo registro...")
+        # Calcular tiempo transcurrido
+        elapsed_time = time.time() - st.session_state.success_message_time
+        remaining_time = max(0, 3 - elapsed_time)
         
-        # Verificar si ha pasado el tiempo suficiente (3 segundos)
-        current_time = time.time()
-        if current_time - st.session_state.success_message_time > 3:
-            # Limpiar el mensaje y preparar para nuevo registro
-            success_placeholder.empty()
+        if remaining_time > 0:
+            # Mostrar mensaje de éxito
+            st.success("✅ ¡Registro guardado exitosamente!")
+            # Mostrar barra de progreso
+            progress_value = remaining_time / 3
+            st.progress(progress_value, text=f"Preparando para nuevo registro... {int(remaining_time)}s")
+            
+            # Programar reset para el próximo ciclo
+            if "reset_scheduled" not in st.session_state:
+                st.session_state.reset_scheduled = True
+                st.session_state.should_reset_form = True
+        else:
+            # El tiempo ha pasado, resetear
             st.session_state.show_success_message = False
-            st.session_state.uploaded_file_key += 1
-            st.session_state.telefono_value = ""
-            st.session_state.form_submitted = True
+            st.session_state.should_reset_form = True
+            if "reset_scheduled" in st.session_state:
+                del st.session_state.reset_scheduled
             st.rerun()
     
     with st.expander("📝 Registro de Nueva Credencial INE", expanded=True):
@@ -440,9 +469,16 @@ if st.session_state.autenticado:
                     value=st.session_state.telefono_value
                 )
             
-            submit_ine = st.form_submit_button("Procesar y Guardar Registro", use_container_width=True)
+            # Deshabilitar el botón si se está mostrando un mensaje de éxito
+            submit_disabled = st.session_state.show_success_message
             
-            if submit_ine:
+            submit_ine = st.form_submit_button(
+                "Procesar y Guardar Registro", 
+                use_container_width=True,
+                disabled=submit_disabled
+            )
+            
+            if submit_ine and not submit_disabled:
                 if not uploaded_file:
                     st.error("❌ Error: Debes subir la imagen de la INE")
                 elif not (telefono_input.isdigit() and len(telefono_input) == 10):
@@ -500,6 +536,9 @@ No agregues explicación. Solo JSON válido.
                                 # Activar mensaje de éxito
                                 st.session_state.show_success_message = True
                                 st.session_state.success_message_time = time.time()
+                                st.session_state.form_submitted = True
+                                if "reset_scheduled" in st.session_state:
+                                    del st.session_state.reset_scheduled
                                 st.rerun()
                             elif resultado == "duplicado":
                                 st.warning("⚠️ Registro duplicado - La clave de elector ya existe en la base de datos")
