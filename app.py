@@ -472,7 +472,7 @@ No agregues explicación. Solo JSON válido.
     st.markdown("---")
     col_footer1, col_footer2, col_footer3 = st.columns(3)
     with col_footer1:
-        st.caption("2026 IDAI - Sistema de Registro")
+        st.caption("2026 IDAI - Sistema de Extracción Inteligente de INE")
     with col_footer2:
         st.caption(f"Usuario activo: {st.session_state.usuario_nombre}")
     with col_footer3:
