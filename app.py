@@ -332,7 +332,7 @@ if not st.session_state.autenticado:
         with st.form("pin_form"):
             pin_col1, pin_col2 = st.columns([2,1])
             with pin_col1:
-                pin = st.text_input("Ingresa tu clave de acceso", type="password", placeholder="Ej: 1234")
+                pin = st.text_input("Ingresa tu clave de acceso", type="password", placeholder="Ej: IDAI1234")
             with pin_col2:
                 submit_pin = st.form_submit_button("Validar", use_container_width=True)
             if submit_pin:
