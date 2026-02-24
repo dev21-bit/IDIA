@@ -18,6 +18,16 @@ st.set_page_config(
 )
 
 # =====================================================
+# INICIALIZAR ESTADO DE SESIÓN PARA LOS CAMPOS
+# =====================================================
+if "form_submitted" not in st.session_state:
+    st.session_state.form_submitted = False
+if "uploaded_file_key" not in st.session_state:
+    st.session_state.uploaded_file_key = 0
+if "telefono_value" not in st.session_state:
+    st.session_state.telefono_value = ""
+
+# =====================================================
 # ESTILOS PERSONALIZADOS PARA TRADUCIR ELEMENTOS
 # =====================================================
 st.markdown("""
@@ -358,6 +368,7 @@ if st.session_state.autenticado:
             st.session_state.autenticado = False
             st.session_state.usuario_nombre = None
             st.session_state.usuario_pin = None
+            st.session_state.form_submitted = False
             st.rerun()
     
     st.markdown("---")
@@ -365,20 +376,25 @@ if st.session_state.autenticado:
     with st.expander("📝 Registro de Nueva Credencial INE", expanded=True):
         st.info("📌 **Instrucciones:** Sube una imagen de la credencial INE (frente) y completa el número de teléfono a 10 dígitos.")
         
+        # Crear una clave única para el file_uploader que se pueda actualizar
+        uploader_key = f"file_uploader_{st.session_state.uploaded_file_key}"
+        
         with st.form("form_ine"):
             col1, col2 = st.columns(2)
             with col1:
                 uploaded_file = st.file_uploader(
                     "📸 Selecciona o captura la imagen de la INE",
                     type=["jpg", "jpeg", "png"],
-                    help="Formatos aceptados: JPG, JPEG, PNG"
+                    help="Formatos aceptados: JPG, JPEG, PNG",
+                    key=uploader_key
                 )
             with col2:
                 telefono_input = st.text_input(
                     "📱 Teléfono (10 dígitos)",
                     max_chars=10,
                     placeholder="Ej: 4921234567",
-                    help="Ingresa el número de teléfono a 10 dígitos"
+                    help="Ingresa el número de teléfono a 10 dígitos",
+                    value=st.session_state.telefono_value
                 )
             
             submit_ine = st.form_submit_button("Procesar y Guardar Registro", use_container_width=True)
@@ -429,26 +445,6 @@ No agregues explicación. Solo JSON válido.
                             data["anio_registro"] = limpiar_anio(data.get("anio_registro"))
                             data["telefono"] = telefono_input
 
-                            st.subheader("📋 Datos Extraídos")
-                            st.dataframe(
-                                pd.DataFrame([data]),
-                                use_container_width=True,
-                                column_config={
-                                    "nombre": "Nombre",
-                                    "apellido_paterno": "Apellido Paterno",
-                                    "apellido_materno": "Apellido Materno",
-                                    "sexo": "Sexo",
-                                    "fecha_nacimiento": "Fecha Nacimiento",
-                                    "curp": "CURP",
-                                    "clave_elector": "Clave Elector",
-                                    "domicilio": "Domicilio",
-                                    "anio_registro": "Año Registro",
-                                    "vigencia": "Vigencia",
-                                    "seccion": "Sección",
-                                    "telefono": "Teléfono"
-                                }
-                            )
-
                             resultado = insertar_en_bd(
                                 data,
                                 st.session_state.usuario_nombre,
@@ -457,7 +453,13 @@ No agregues explicación. Solo JSON válido.
 
                             if resultado == "insertado":
                                 st.success("✅ ¡Registro guardado exitosamente!")
-                                st.balloons()
+                                # Incrementar la clave del uploader para limpiarlo
+                                st.session_state.uploaded_file_key += 1
+                                # Limpiar el valor del teléfono
+                                st.session_state.telefono_value = ""
+                                # Marcar que se ha enviado el formulario
+                                st.session_state.form_submitted = True
+                                st.rerun()
                             elif resultado == "duplicado":
                                 st.warning("⚠️ Registro duplicado - La clave de elector ya existe en la base de datos")
                             elif resultado == "Clave de elector inválida":
