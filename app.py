@@ -6,6 +6,7 @@ import pymysql
 import re
 from openai import OpenAI
 import streamlit.components.v1 as components
+import time
 
 # =====================================================
 # CONFIGURACIÓN INICIAL
@@ -26,6 +27,10 @@ if "uploaded_file_key" not in st.session_state:
     st.session_state.uploaded_file_key = 0
 if "telefono_value" not in st.session_state:
     st.session_state.telefono_value = ""
+if "show_success_message" not in st.session_state:
+    st.session_state.show_success_message = False
+if "success_message_time" not in st.session_state:
+    st.session_state.success_message_time = 0
 
 # =====================================================
 # ESTILOS PERSONALIZADOS PARA TRADUCIR ELEMENTOS
@@ -133,12 +138,30 @@ st.markdown("""
     .stAlert {
         border-radius: 8px;
         border-left: 5px solid;
+        animation: fadeIn 0.5s ease-in;
+    }
+    
+    /* Animación para mensajes */
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(-10px); }
+        to { opacity: 1; transform: translateY(0); }
     }
     
     /* Traducir placeholder de input */
     input::placeholder {
         color: #aaa;
         font-style: italic;
+    }
+    
+    /* Estilo para mensaje de éxito destacado */
+    div[data-testid="stSuccess"] {
+        border-left: 5px solid #28a745;
+        background-color: #d4edda;
+        color: #155724;
+        font-size: 1.1rem;
+        padding: 1rem;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
 </style>
 """, unsafe_allow_html=True)
@@ -369,9 +392,29 @@ if st.session_state.autenticado:
             st.session_state.usuario_nombre = None
             st.session_state.usuario_pin = None
             st.session_state.form_submitted = False
+            st.session_state.show_success_message = False
             st.rerun()
     
     st.markdown("---")
+    
+    # Mostrar mensaje de éxito si existe
+    if st.session_state.show_success_message:
+        success_placeholder = st.empty()
+        with success_placeholder.container():
+            st.success("✅ ¡Registro guardado exitosamente!")
+            # Agregar un temporizador visual
+            st.progress(1.0, text="Preparando para nuevo registro...")
+        
+        # Verificar si ha pasado el tiempo suficiente (3 segundos)
+        current_time = time.time()
+        if current_time - st.session_state.success_message_time > 3:
+            # Limpiar el mensaje y preparar para nuevo registro
+            success_placeholder.empty()
+            st.session_state.show_success_message = False
+            st.session_state.uploaded_file_key += 1
+            st.session_state.telefono_value = ""
+            st.session_state.form_submitted = True
+            st.rerun()
     
     with st.expander("📝 Registro de Nueva Credencial INE", expanded=True):
         st.info("📌 **Instrucciones:** Sube una imagen de la credencial INE (frente) y completa el número de teléfono a 10 dígitos.")
@@ -452,13 +495,11 @@ No agregues explicación. Solo JSON válido.
                             )
 
                             if resultado == "insertado":
-                                st.success("✅ ¡Registro guardado exitosamente!")
-                                # Incrementar la clave del uploader para limpiarlo
-                                st.session_state.uploaded_file_key += 1
-                                # Limpiar el valor del teléfono
-                                st.session_state.telefono_value = ""
-                                # Marcar que se ha enviado el formulario
-                                st.session_state.form_submitted = True
+                                # Guardar el teléfono actual antes de limpiar
+                                st.session_state.telefono_value = telefono_input
+                                # Activar mensaje de éxito
+                                st.session_state.show_success_message = True
+                                st.session_state.success_message_time = time.time()
                                 st.rerun()
                             elif resultado == "duplicado":
                                 st.warning("⚠️ Registro duplicado - La clave de elector ya existe en la base de datos")
@@ -468,7 +509,8 @@ No agregues explicación. Solo JSON válido.
                                 st.error(f"❌ Error en base de datos: {resultado}")
                         except Exception as e:
                             st.error("❌ Error al procesar la respuesta - La imagen no contiene información válida")
-                            st.write("Detalle técnico:", e)
+                            with st.expander("Ver detalle técnico"):
+                                st.write(e)
     
     # Pie de página
     st.markdown("---")
