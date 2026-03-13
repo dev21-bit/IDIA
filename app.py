@@ -85,38 +85,29 @@ def crear_tablas():
     with conn.cursor() as cursor:
 
         cursor.execute("""
-        CREATE TABLE IF NOT EXISTS usuarios(
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        nombre VARCHAR(100),
-        pin VARCHAR(20)
-        )
-        """)
-
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS ine(
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        nombre VARCHAR(100),
-        apellido_paterno VARCHAR(100),
-        apellido_materno VARCHAR(100),
-        sexo VARCHAR(10),
-        fecha_nacimiento VARCHAR(20),
-        curp VARCHAR(25),
-        clave_elector VARCHAR(30) UNIQUE,
-        domicilio TEXT,
-        telefono VARCHAR(20),
-        anio_registro INT,
-        vigencia VARCHAR(20),
-        seccion VARCHAR(20),
-        usuario_nombre VARCHAR(100),
-        usuario_pin VARCHAR(20)
-        pdf LONGBLOB
-        )
+        CREATE TABLE IF NOT EXISTS ine (
+            id INT NOT NULL AUTO_INCREMENT,
+            nombre VARCHAR(100),
+            apellido_paterno VARCHAR(100),
+            apellido_materno VARCHAR(100),
+            sexo VARCHAR(10),
+            fecha_nacimiento VARCHAR(20),
+            curp VARCHAR(25),
+            clave_elector VARCHAR(30) UNIQUE,
+            domicilio TEXT,
+            telefono VARCHAR(20),
+            anio_registro INT,
+            vigencia VARCHAR(20),
+            seccion VARCHAR(20),
+            usuario_nombre VARCHAR(100),
+            usuario_pin VARCHAR(20),
+            pdf LONGBLOB,
+            PRIMARY KEY (id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         """)
 
     conn.commit()
     conn.close()
-
-crear_tablas()
 
 # =============================
 # LOGIN PIN
