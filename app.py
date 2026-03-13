@@ -1,129 +1,69 @@
 import streamlit as st
+import pymysql
 import base64
 import json
-import pandas as pd
-import pymysql
+import os
+import uuid
+import qrcode
 import re
+from io import BytesIO
 from openai import OpenAI
-import streamlit.components.v1 as components
-import time
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.utils import ImageReader
+# =============================
+# CONFIG
+# =============================
 
-# =====================================================
-# CONFIGURACIÓN INICIAL
-# =====================================================
-st.set_page_config(
-    page_title="IDAI - Sistema de Registro INE",
-    page_icon="🆔",
-    layout="centered",
-    initial_sidebar_state="collapsed"
-)
-
-# =====================================================
-# INICIALIZAR ESTADO DE SESIÓN PARA LOS CAMPOS
-# =====================================================
-if "form_submitted" not in st.session_state:
-    st.session_state.form_submitted = False
-if "uploaded_file_key" not in st.session_state:
-    st.session_state.uploaded_file_key = 0
-if "telefono_value" not in st.session_state:
-    st.session_state.telefono_value = ""
-if "show_success_message" not in st.session_state:
-    st.session_state.show_success_message = False
-if "success_message_time" not in st.session_state:
-    st.session_state.success_message_time = 0
-if "should_reset_form" not in st.session_state:
-    st.session_state.should_reset_form = False
-
-# =====================================================
-# FUNCIÓN PARA RESETEAR EL FORMULARIO
-# =====================================================
-def reset_form():
-    st.session_state.uploaded_file_key += 1
-    st.session_state.telefono_value = ""
-    st.session_state.show_success_message = False
-    st.session_state.should_reset_form = False
-    st.session_state.form_submitted = False
-
-# =====================================================
-# ESTILOS PERSONALIZADOS
-# =====================================================
+st.set_page_config(page_title="IDAI", page_icon="🆔")
 st.markdown("""
 <style>
-    /* Personalizar botones */
-    .stButton button {
-        background-color: #650021;
-        color: white;
-        border: none;
-        border-radius: 8px;
-        padding: 10px 20px;
-        font-weight: 600;
-        transition: all 0.3s ease;
-    }
-    .stButton button:hover {
-        background-color: #8B0000;
-        transform: translateY(-2px);
-        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-    }
 
-    /* Personalizar inputs */
-    .stTextInput input {
-        border: 2px solid #650021;
-        border-radius: 8px;
-        padding: 8px 12px;
-    }
+[data-testid="stFileUploaderDropzone"] > div {
+    text-align: center;
+}
 
-    /* Personalizar títulos */
-    h1 {
-        color: #650021;
-        font-size: 2.5rem;
-        font-weight: 700;
-        margin-bottom: 0.5rem;
-    }
+[data-testid="stFileUploaderDropzone"] span {
+    visibility: hidden;
+}
 
-    /* Estilo para mensaje de éxito destacado */
-    div[data-testid="stSuccess"] {
-        border-left: 5px solid #28a745;
-        background-color: #d4edda;
-        color: #155724;
-        font-size: 1.1rem;
-        padding: 1rem;
-        border-radius: 8px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        margin-bottom: 20px;
-    }
+[data-testid="stFileUploaderDropzone"]::before {
+    content: "Haz clic para tomar o seleccionar la imagen de la INE";
+    display: block;
+    font-size: 16px;
+    font-weight: 600;
+    color: #444;
+    margin-bottom: 5px;
+}
+
+
 </style>
 """, unsafe_allow_html=True)
 
-# =====================================================
-# FUNCIONES DE UTILIDAD
-# =====================================================
-def limpiar_anio(valor):
-    if not valor:
-        return None
-    match = re.search(r"\d{4}", str(valor))
-    if match:
-        return int(match.group())
-    return None
+client = OpenAI(api_key=st.secrets["openai"]["api_key"])
 
-def normalizar_clave(valor):
-    if not valor:
-        return None
-    valor = str(valor).upper()
-    valor = re.sub(r"\s+", "", valor)
-    valor = re.sub(r"[^A-Z0-9]", "", valor)
-    return valor
+BASE_DOWNLOAD_URL = "https://idai-ia.streamlit.app/?pdf="
 
-def extraer_json(texto):
-    texto = re.sub(r"```json", "", texto)
-    texto = re.sub(r"```", "", texto)
-    match = re.search(r"\{.*\}", texto, re.DOTALL)
-    if match:
-        return match.group()
-    return texto.strip()
+# =============================
+# SESIÓN
+# =============================
 
-# =====================================================
-# CONEXIÓN BASE DE DATOS
-# =====================================================
+if "autenticado" not in st.session_state:
+    st.session_state.autenticado = False
+    st.session_state.usuario_nombre = None
+    st.session_state.usuario_pin = None
+
+# =============================
+# CARPETAS
+# =============================
+
+os.makedirs("pdfs", exist_ok=True)
+os.makedirs("qr", exist_ok=True)
+
+# =============================
+# DB
+# =============================
+
 def get_connection():
     return pymysql.connect(
         host=st.secrets["db"]["DB_HOST"],
@@ -134,243 +74,566 @@ def get_connection():
         cursorclass=pymysql.cursors.DictCursor
     )
 
-def validar_pin(pin):
-    conn = get_connection()
-    try:
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT nombre, pin FROM usuarios WHERE pin=%s", (pin,))
-            return cursor.fetchone()
-    finally:
-        conn.close()
+# =============================
+# TABLAS
+# =============================
 
-def crear_tabla():
+def crear_tablas():
+
     conn = get_connection()
+
     with conn.cursor() as cursor:
+
         cursor.execute("""
-        CREATE TABLE IF NOT EXISTS ine (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            nombre VARCHAR(100),
-            apellido_paterno VARCHAR(100),
-            apellido_materno VARCHAR(100),
-            sexo VARCHAR(5),
-            fecha_nacimiento VARCHAR(20),
-            curp VARCHAR(25) UNIQUE,
-            clave_elector VARCHAR(30) UNIQUE,
-            domicilio TEXT,
-            telefono VARCHAR(20),
-            anio_registro INT,
-            vigencia VARCHAR(20),
-            seccion VARCHAR(20),
-            usuario_nombre VARCHAR(100),
-            usuario_pin VARCHAR(20)
+        CREATE TABLE IF NOT EXISTS usuarios(
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        nombre VARCHAR(100),
+        pin VARCHAR(20)
         )
         """)
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS ine(
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        nombre VARCHAR(100),
+        apellido_paterno VARCHAR(100),
+        apellido_materno VARCHAR(100),
+        sexo VARCHAR(10),
+        fecha_nacimiento VARCHAR(20),
+        curp VARCHAR(25),
+        clave_elector VARCHAR(30) UNIQUE,
+        domicilio TEXT,
+        telefono VARCHAR(20),
+        anio_registro INT,
+        vigencia VARCHAR(20),
+        seccion VARCHAR(20),
+        usuario_nombre VARCHAR(100),
+        usuario_pin VARCHAR(20)
+        pdf LONGBLOB
+        )
+        """)
+
     conn.commit()
     conn.close()
 
-crear_tabla()
+crear_tablas()
 
-def insertar_en_bd(data, usuario_nombre, usuario_pin):
+# =============================
+# LOGIN PIN
+# =============================
+
+def validar_pin(pin):
+
     conn = get_connection()
+
     try:
+
         with conn.cursor() as cursor:
-            clave_elector = normalizar_clave(data.get("clave_elector"))
-            data["clave_elector"] = clave_elector
 
-            if not clave_elector or len(clave_elector) < 18:
-                return "Clave de elector inválida"
+            cursor.execute(
+                "SELECT nombre, pin FROM usuarios WHERE pin=%s",
+                (pin.strip(),)
+            )
 
-            cursor.execute("SELECT id FROM ine WHERE clave_elector=%s", (clave_elector,))
-            if cursor.fetchone():
-                return "duplicado"
+            return cursor.fetchone()
 
-            cursor.execute("""
-            INSERT INTO ine (
-                nombre, apellido_paterno, apellido_materno, sexo,
-                fecha_nacimiento, curp, clave_elector, domicilio,
-                telefono, anio_registro, vigencia, seccion,
-                usuario_nombre, usuario_pin
-            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-            """, (
-                data.get("nombre"),
-                data.get("apellido_paterno"),
-                data.get("apellido_materno"),
-                data.get("sexo"),
-                data.get("fecha_nacimiento"),
-                data.get("curp"),
-                clave_elector,
-                data.get("domicilio"),
-                data.get("telefono"),
-                data.get("anio_registro"),
-                data.get("vigencia"),
-                data.get("seccion"),
-                usuario_nombre,
-                usuario_pin
-            ))
-        conn.commit()
-        return "insertado"
-    except Exception as e:
-        return f"error: {e}"
     finally:
+
         conn.close()
 
-# =====================================================
-# OpenAI
-# =====================================================
-client = OpenAI(api_key=st.secrets["openai"]["api_key"])
+# =============================
+# LIMPIEZA
+# =============================
 
-# =====================================================
-# TÍTULO PRINCIPAL
-# =====================================================
-st.title("🆔 IDAI")
-st.markdown("### Sistema de Extracción Inteligente de INE")
-st.markdown("---")
+def limpiar_anio(valor):
 
-# =====================================================
-# Autenticación con PIN
-# =====================================================
-if "autenticado" not in st.session_state:
-    st.session_state.autenticado = False
-    st.session_state.usuario_nombre = None
-    st.session_state.usuario_pin = None
+    if not valor:
+        return None
+
+    m = re.search(r"\d{4}", str(valor))
+
+    if m:
+        return int(m.group())
+
+    return None
+
+
+def extraer_json(texto):
+
+    texto = re.sub(r"```json", "", texto)
+    texto = re.sub(r"```", "", texto)
+
+    match = re.search(r"\{.*\}", texto, re.DOTALL)
+
+    if match:
+        return match.group()
+
+    return texto
+
+# =============================
+# PDF
+# =============================
+
+def generar_pdf(data):
+
+    buffer = BytesIO()
+
+    folio = str(uuid.uuid4())[:8]
+
+    clave = data["clave_elector"]
+
+    url = BASE_DOWNLOAD_URL + clave
+
+    qr = qrcode.make(url)
+
+    qr_buffer = BytesIO()
+    qr.save(qr_buffer, format="PNG")
+    qr_buffer.seek(0)
+
+    c = canvas.Canvas(buffer, pagesize=letter)
+
+    width, height = letter
+
+    # =============================
+    # TITULO SEGUN TIPO
+    # =============================
+
+    c.setFont("Helvetica-Bold", 18)
+
+    if data.get("tipo_registro") == "Afiliado al partido":
+        titulo = "FORMATO DE AFILIACIÓN AL PARTIDO"
+    else:
+        titulo = "FORMATO DE REGISTRO DE APOYO"
+
+    c.drawCentredString(width/2, 750, titulo)
+
+    c.setFont("Helvetica", 10)
+
+    # =============================
+    # FOLIO
+    # =============================
+
+    c.drawString(50,720,"Folio")
+    c.rect(90,710,120,20)
+    c.drawString(95,715,folio)
+
+    # =============================
+    # NOMBRE
+    # =============================
+
+    y=680
+
+    c.drawString(50,y+20,"Apellido Paterno")
+    c.rect(50,y,170,20)
+
+    c.drawString(230,y+20,"Apellido Materno")
+    c.rect(230,y,170,20)
+
+    c.drawString(410,y+20,"Nombre(s)")
+    c.rect(410,y,150,20)
+
+    c.drawString(55,y+5,data.get("apellido_paterno",""))
+    c.drawString(235,y+5,data.get("apellido_materno",""))
+    c.drawString(415,y+5,data.get("nombre",""))
+
+    # =============================
+    # DOMICILIO
+    # =============================
+
+    y=640
+
+    c.drawString(50,y+20,"Domicilio")
+    c.rect(50,y,510,20)
+
+    c.drawString(55,y+5,data.get("domicilio",""))
+
+    # =============================
+    # CURP
+    # =============================
+
+    y=600
+
+    c.drawString(50,y+20,"CURP")
+    c.rect(50,y,250,20)
+
+    c.drawString(55,y+5,data.get("curp",""))
+
+    c.drawString(320,y+20,"Clave de Elector")
+
+    clave_txt=data.get("clave_elector","")
+
+    x=320
+
+    for i in range(18):
+
+        c.rect(x+(i*12),y,10,15)
+
+        if i<len(clave_txt):
+            c.drawString(x+(i*12)+2,y+3,clave_txt[i])
+
+    # =============================
+    # DATOS PERSONALES
+    # =============================
+
+    y=550
+
+    c.drawString(50,y+20,"Fecha Nacimiento")
+    c.rect(50,y,130,20)
+    c.drawString(55,y+5,data.get("fecha_nacimiento",""))
+
+    c.drawString(200,y+20,"Sexo")
+    c.rect(200,y,70,20)
+    c.drawString(205,y+5,data.get("sexo",""))
+
+    c.drawString(290,y+20,"Sección")
+    c.rect(290,y,70,20)
+    c.drawString(295,y+5,data.get("seccion",""))
+
+    c.drawString(380,y+20,"Teléfono")
+    c.rect(380,y,180,20)
+    c.drawString(385,y+5,data.get("telefono",""))
+
+    # =============================
+    # REGISTRO
+    # =============================
+
+    y=500
+
+    c.drawString(50,y+20,"Año Registro")
+    c.rect(50,y,100,20)
+    c.drawString(55,y+5,str(data.get("anio_registro","")))
+
+    c.drawString(170,y+20,"Vigencia")
+    c.rect(170,y,120,20)
+    c.drawString(175,y+5,data.get("vigencia",""))
+
+    # =============================
+    # TEXTO LEGAL
+    # =============================
+
+    y=450
+
+    c.setFont("Helvetica",9)
+
+    if data.get("tipo_registro") == "Afiliado al partido":
+
+        c.drawString(50,y,"Por mi libre voluntad solicito mi afiliación al partido en virtud de estar de acuerdo con sus documentos básicos.")
+        c.drawString(50,y-15,"Me comprometo a cumplir sus estatutos y trabajar activamente con sus miembros.")
+        c.drawString(50,y-35,"Declaro bajo protesta de decir verdad que no me encuentro afiliado a otro partido político.")
+
+    else:
+
+        c.drawString(50,y,"Por medio del presente manifiesto mi apoyo ciudadano al partido.")
+        c.drawString(50,y-15,"Este apoyo no implica afiliación formal ni militancia política.")
+        c.drawString(50,y-35,"Autorizo el uso de mis datos únicamente para fines de registro y contacto.")
+
+    # =============================
+    # FIRMAS
+    # =============================
+
+    y=340
+
+    c.line(80,y,260,y)
+    c.drawCentredString(170,y-15,"Firma del Ciudadano")
+
+    c.line(340,y,520,y)
+    c.drawCentredString(430,y-15,"Firma del Responsable")
+
+    # =============================
+    # QR
+    # =============================
+
+    qr_x=470
+    qr_y=240
+
+
+    c.drawImage(ImageReader(qr_buffer),qr_x,qr_y,80,80)
+
+    c.setFont("Helvetica",7)
+    c.drawCentredString(qr_x+40,qr_y-10,"Escanear para descargar")
+
+    # =============================
+    # FOOTER
+    # =============================
+
+    c.setFont("Helvetica-Oblique",8)
+    c.drawCentredString(width/2,300,"Sistema IDAI - Registro Inteligente")
+
+    c.save()
+
+    buffer.seek(0)
+
+    return buffer.read()
+
+# =============================
+# INSERTAR
+# =============================
+
+def insertar(data):
+    """Inserta los datos en la base de datos y guarda el PDF en la BD"""
+    conn = None
+    try:
+        conn = get_connection()
+        
+        with conn.cursor() as cursor:
+            # Verificar si ya existe la clave de elector
+            cursor.execute(
+                "SELECT id FROM ine WHERE clave_elector = %s",
+                (data["clave_elector"],)
+            )
+            existe = cursor.fetchone()
+            
+            if existe:
+                return "duplicado"
+            
+            # Generar PDF
+            pdf_bytes = generar_pdf(data)
+            
+            # Insertar en base de datos incluyendo el PDF
+            cursor.execute("""
+            INSERT INTO ine(
+                nombre,
+                apellido_paterno,
+                apellido_materno,
+                sexo,
+                fecha_nacimiento,
+                curp,
+                clave_elector,
+                domicilio,
+                telefono,
+                anio_registro,
+                vigencia,
+                seccion,
+                usuario_nombre,
+                usuario_pin,
+                pdf
+            )
+            VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                data["nombre"],
+                data["apellido_paterno"],
+                data["apellido_materno"],
+                data["sexo"],
+                data["fecha_nacimiento"],
+                data["curp"],
+                data["clave_elector"],
+                data["domicilio"],
+                data["telefono"],
+                data["anio_registro"],
+                data["vigencia"],
+                data["seccion"],
+                st.session_state.usuario_nombre,
+                st.session_state.usuario_pin,
+                pdf_bytes
+            ))
+            
+            conn.commit()
+            
+            # También guardamos una copia en archivo para descarga rápida
+            pdf_path = f"pdfs/{data['clave_elector']}.pdf"
+            with open(pdf_path, "wb") as pdf_file:
+                pdf_file.write(pdf_bytes)
+                
+            return "ok"
+            
+    except pymysql.IntegrityError as e:
+        if conn:
+            conn.rollback()
+        if "duplicate" in str(e).lower():
+            return "duplicado"
+        return "error"
+        
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        print(f"Error en insertar: {str(e)}")
+        return "error"
+        
+    finally:
+        if conn:
+            conn.close()
+# =============================
+# DESCARGA QR (versión con BD)
+# =============================
+
+params = st.query_params
+
+if "pdf" in params:
+    clave = params["pdf"]
+    
+    conn = get_connection()
+    with conn.cursor() as cursor:
+        cursor.execute(
+            "SELECT pdf FROM ine WHERE clave_elector = %s",
+            (clave,)
+        )
+        resultado = cursor.fetchone()
+        
+        if resultado and resultado['pdf']:
+            st.download_button(
+                "Descargar documento",
+                resultado['pdf'],
+                file_name=f"{clave}.pdf",
+                mime="application/pdf"
+            )
+    conn.close()
+    st.stop()
+
+# =============================
+# LOGIN UI
+# =============================
 
 if not st.session_state.autenticado:
-    with st.container():
-        st.subheader("Iniciar Sesión")
-        with st.form("pin_form"):
-            pin_col1, pin_col2 = st.columns([2,1])
-            with pin_col1:
-                pin = st.text_input("Ingresa tu clave de acceso", type="password", placeholder="Ej: IDAI1234")
-            with pin_col2:
-                submit_pin = st.form_submit_button("Validar", use_container_width=True)
-            if submit_pin:
-                usuario = validar_pin(pin)
-                if usuario:
-                    st.session_state.autenticado = True
-                    st.session_state.usuario_nombre = usuario["nombre"]
-                    st.session_state.usuario_pin = usuario["pin"]
-                    st.success(f"✅ ¡Bienvenido {usuario['nombre']}!")
-                    st.rerun()
-                else:
-                    st.error("❌ Clave incorrecta. Intenta de nuevo.")
 
-# =====================================================
-# Formulario principal
-# =====================================================
-if st.session_state.autenticado:
-    col_user1, col_user2, col_user3 = st.columns([3,1,1])
-    with col_user1:
-        st.markdown(f"**👤 Usuario:** {st.session_state.usuario_nombre}")
-    with col_user3:
-        if st.button("Cerrar Sesión", use_container_width=True):
-            st.session_state.autenticado = False
-            st.session_state.usuario_nombre = None
-            st.session_state.usuario_pin = None
-            st.session_state.form_submitted = False
-            st.session_state.show_success_message = False
-            st.session_state.should_reset_form = False
-            st.experimental_rerun()
+    st.title("🆔 IDAI")
 
-    st.markdown("---")
+    pin=st.text_input("Clave de acceso",type="password")
 
-    with st.expander("📝 Registro de Nueva Credencial INE", expanded=True):
-        st.info("📌 **Instrucciones:** Sube una imagen de la credencial INE (frente) y completa el número de teléfono a 10 dígitos.")
-        uploader_key = f"file_uploader_{st.session_state.uploaded_file_key}"
+    if st.button("Ingresar"):
 
-        # Botón para limpiar formulario (fuera del form)
-        if st.button("🧹 Limpiar Formulario"):
-            reset_form()
-            st.success("Formulario limpiado ✅")
+        usuario=validar_pin(pin)
 
-        with st.form("form_ine"):
-            col1, col2 = st.columns(2)
-            with col1:
-                uploaded_file = st.file_uploader(
-                    "📸 Selecciona o captura la imagen de la INE",
-                    type=["jpg", "jpeg", "png"],
-                    key=uploader_key
-                )
-            with col2:
-                telefono_input = st.text_input(
-                    "📱 Teléfono (10 dígitos)",
-                    max_chars=10,
-                    value=st.session_state.telefono_value,
-                    placeholder="Ej: 4921234567"
-                )
+        if usuario:
 
-            submit_ine = st.form_submit_button("Procesar y Guardar Registro", use_container_width=True)
+            st.session_state.autenticado=True
+            st.session_state.usuario_nombre=usuario["nombre"]
+            st.session_state.usuario_pin=usuario["pin"]
 
-            if submit_ine:
-                if not uploaded_file:
-                    st.error("❌ Debes subir la imagen de la INE")
-                elif not (telefono_input.isdigit() and len(telefono_input) == 10):
-                    st.error("❌ El número de teléfono debe tener 10 dígitos")
-                else:
-                    with st.spinner("⏳ Procesando imagen con IA..."):
-                        image_bytes = uploaded_file.read()
-                        base64_image = base64.b64encode(image_bytes).decode("utf-8")
+            st.success(f"Bienvenido {usuario['nombre']}")
 
-                        response = client.responses.create(
-                            model="gpt-4.1",
-                            input=[{
-                                "role": "user",
-                                "content": [
-                                    {"type": "input_text", "text": """
-Extrae la información de la credencial INE y devuelve únicamente un JSON
-con esta estructura exacta:
+            st.rerun()
+
+        else:
+
+            st.error("PIN incorrecto")
+
+    st.stop()
+
+# =============================
+# PANEL
+# =============================
+
+st.title("🆔 IDAI")
+
+st.write(f"Usuario activo: {st.session_state.usuario_nombre}")
+
+if st.button("Cerrar sesión"):
+
+    st.session_state.autenticado=False
+    st.rerun()
+
+img = st.file_uploader(
+    "📷 Subir imagen de credencial INE",
+    type=["jpg","jpeg","png"],
+    label_visibility="visible"
+)
+
+telefono=st.text_input("Teléfono")
+tipo_registro = st.radio(
+    "Tipo de registro",
+    ["Afiliado al partido", "Solo apoyo"]
+)
+
+# =============================
+# AVISO DE PRIVACIDAD
+# =============================
+with st.expander("📋 Aviso de Privacidad"):
+    st.markdown("""
+    **AVISO DE PRIVACIDAD**
+    
+    De conformidad con lo establecido en la Ley Federal de Protección de Datos Personales en Posesión de los Particulares, IDAI pone a su disposición el siguiente aviso de privacidad.
+    
+    IDAI es responsable del uso y protección de sus datos personales, en este sentido y atendiendo las obligaciones legales establecidas en la Ley Federal de Protección de Datos Personales en Posesión de los Particulares, a través de este instrumento se informa a los titulares de los datos, la información que de ellos se recaba y los fines que se le darán a dicha información.
+    
+    Los datos personales que recabamos de usted serán utilizados para las siguientes finalidades: registro en el sistema, generación de documentos oficiales, verificación de identidad y contacto.
+    
+    **Consentimiento**
+    Al marcar la casilla de aceptación, usted otorga su consentimiento para el tratamiento de sus datos personales conforme a este aviso de privacidad.
+    """)
+
+acepto_privacidad = st.checkbox("He leído y acepto el Aviso de Privacidad", value=False)
+
+# =============================
+# BOTÓN DE PROCESAR
+# =============================
+if st.button("Procesar"):
+
+    # Validaciones
+    if not img:
+        st.error("❌ Error: Por favor sube una imagen de la INE")
+    
+    elif not acepto_privacidad:
+        st.error("❌ Error: Debes aceptar el Aviso de Privacidad para continuar con el registro")
+    
+    else:
+        with st.spinner("Procesando imagen y generando registro..."):
+            try:
+                bytes_img=img.read()
+
+                base64_img=base64.b64encode(bytes_img).decode()
+
+                response=client.responses.create(
+                model="gpt-4.1",
+                input=[{
+                "role":"user",
+                "content":[
+                {"type":"input_text","text":"""
+Extrae datos INE y devuelve JSON:
 
 {
-  "nombre": "",
-  "apellido_paterno": "",
-  "apellido_materno": "",
-  "sexo": "",
-  "fecha_nacimiento": "",
-  "curp": "",
-  "clave_elector": "",
-  "domicilio": "",
-  "anio_registro": "",
-  "vigencia": "",
-  "seccion": ""
+"nombre":"",
+"apellido_paterno":"",
+"apellido_materno":"",
+"sexo":"",
+"fecha_nacimiento":"",
+"curp":"",
+"clave_elector":"",
+"domicilio":"",
+"anio_registro":"",
+"vigencia":"",
+"seccion":""
 }
-No agregues explicación. Solo JSON válido.
 """},
-                                    {"type": "input_image", "image_url": f"data:image/jpeg;base64,{base64_image}"}
-                                ]
-                            }]
-                        )
 
-                        try:
-                            json_limpio = extraer_json(response.output_text)
-                            data = json.loads(json_limpio)
-                            data["anio_registro"] = limpiar_anio(data.get("anio_registro"))
-                            data["telefono"] = telefono_input
+                {"type":"input_image",
+                "image_url":f"data:image/jpeg;base64,{base64_img}"}
+                ]
+                }]
+                )
 
-                            resultado = insertar_en_bd(
-                                data,
-                                st.session_state.usuario_nombre,
-                                st.session_state.usuario_pin
+                limpio=extraer_json(response.output_text)
+
+                data=json.loads(limpio)
+
+                data["telefono"]=telefono
+                data["tipo_registro"] = tipo_registro
+
+                data["anio_registro"]=limpiar_anio(data.get("anio_registro"))
+
+                resultado=insertar(data)
+
+                if resultado=="ok":
+                    st.success("✅ ¡Registro exitoso! Los datos han sido guardados correctamente en el sistema")
+                    
+                    pdf=f"pdfs/{data['clave_elector']}.pdf"
+
+                    with open(pdf,"rb") as f:
+                        col1, col2 = st.columns([1, 3])
+                        with col1:
+                            st.download_button(
+                            "📥 Descargar PDF",
+                            f,
+                            file_name=f"{data['clave_elector']}.pdf"
                             )
+                        with col2:
+                            st.info(f"Folio: {data['clave_elector'][:8]} - Se ha generado el documento correctamente")
 
-                            if resultado == "insertado":
-                                st.session_state.telefono_value = telefono_input
-                                st.success("✅ ¡Registro guardado exitosamente!")
-                                reset_form()
-                            elif resultado == "duplicado":
-                                st.warning("⚠️ Registro duplicado - La clave de elector ya existe en la base de datos")
-                            elif resultado == "Clave de elector inválida":
-                                st.error("❌ Clave de elector inválida - Por favor verifica la imagen")
-                            else:
-                                st.error(f"❌ Error en base de datos: {resultado}")
-                        except Exception as e:
-                            st.error("❌ Error al procesar la respuesta - La imagen no contiene información válida")
-                            with st.expander("Ver detalle técnico"):
-                                st.write(e)
-
-    st.markdown("---")
-    col_footer1, col_footer2, col_footer3 = st.columns(3)
-    with col_footer1:
-        st.caption("2026 IDAI - Sistema de Extracción Inteligente de INE")
-    with col_footer2:
-        st.caption(f"Usuario activo: {st.session_state.usuario_nombre}")
-    with col_footer3:
-        st.caption("Versión 2.0")
+                elif resultado == "duplicado":
+                    st.error("❌ Error: Ya existe un registro con esta clave de elector. No se puede duplicar el registro")
+                    st.info("Si necesitas actualizar un registro existente, contacta al administrador del sistema")
+                else:
+                    st.error("❌ Error: No se pudo completar el registro. Por favor intenta nuevamente")
+                    
+            except Exception as e:
+                st.error(f"❌ Error inesperado: {str(e)}")
+                st.info("Por favor verifica la imagen e intenta nuevamente")

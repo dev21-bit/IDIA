@@ -1,4 +1,6 @@
 streamlit
-openai
-pandas
 pymysql
+qrcode
+pillow
+reportlab
+openai
