@@ -2,3 +2,5 @@ streamlit
 openai
 pandas
 pymysql
+qrcode
+pillow
