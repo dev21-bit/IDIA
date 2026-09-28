@@ -66,10 +66,10 @@ os.makedirs("qr", exist_ok=True)
 
 def get_connection():
     return pymysql.connect(
-        host=st.secrets["db"]["DB_HOST"],
-        user=st.secrets["db"]["DB_USER"],
-        password=st.secrets["db"]["DB_PASSWORD"],
-        database=st.secrets["db"]["DB_NAME"],
+        host="sql5.freesqldatabase.com",
+        user="sql5837939",
+        password="Y6HdzdCktB",
+        database="sql5837939",
         port=st.secrets["db"]["DB_PORT"],
         cursorclass=pymysql.cursors.DictCursor
     )
