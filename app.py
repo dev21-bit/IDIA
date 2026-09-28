@@ -66,10 +66,10 @@ os.makedirs("qr", exist_ok=True)
 
 def get_connection():
     return pymysql.connect(
-        host="sql5.freesqldatabase.com",
-        user="sql5837939",
-        password="Y6HdzdCktB",
-        database="sql5837939",
+        host=st.secrets["db"]["DB_HOST"],
+        user=st.secrets["db"]["DB_USER"],
+        password=st.secrets["db"]["DB_PASSWORD"],
+        database=st.secrets["db"]["DB_NAME"],
         port=st.secrets["db"]["DB_PORT"],
         cursorclass=pymysql.cursors.DictCursor
     )
@@ -108,6 +108,15 @@ def crear_tablas():
 
     conn.commit()
     conn.close()
+
+# =============================
+# INICIALIZAR TABLA
+# =============================
+
+try:
+    crear_tablas()
+except Exception as e:
+    st.error(f"ERROR REAL DE BASE DE DATOS AL CREAR LA TABLA: {str(e)}")
 
 # =============================
 # LOGIN PIN
@@ -437,6 +446,7 @@ def insertar(data):
     except Exception as e:
         if conn:
             conn.rollback()
+        st.error(f"ERROR REAL DE BASE DE DATOS: {str(e)}")
         print(f"Error en insertar: {str(e)}")
         return "error"
         
